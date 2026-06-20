@@ -1,0 +1,18 @@
+{
+  "functions": {
+    "api/**/*": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "x-vercel-set-bypass-retries",
+          "value": "1"
+        }
+      ]
+    }
+  ]
+}
