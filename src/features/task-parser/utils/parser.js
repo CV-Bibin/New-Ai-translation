@@ -132,14 +132,36 @@ export const parseRawTaskText = (text) => {
     if (isResultNumber(line)) {
       if (currentResult) taskData.results.push(currentResult);
 
+      const subtitleLines = [];
+      let subtitleIndex = i + 2;
+
+      while (
+        subtitleIndex < lines.length &&
+        !isResultLabel(lines[subtitleIndex]) &&
+        !isResultNumber(lines[subtitleIndex])
+      ) {
+        subtitleLines.push(lines[subtitleIndex]);
+        subtitleIndex++;
+      }
+
+      const subtitleText = subtitleLines.join(', ');
+      let subtitleAddress = subtitleText;
+      let subtitleCategory = '';
+
+      if (subtitleText.includes('•')) {
+        const parts = subtitleText.split('•').map((part) => part.trim());
+        subtitleCategory = parts[0] || '';
+        subtitleAddress = subtitleText;
+      }
+
       currentResult = {
         number: line,
         title: lines[i + 1] || 'Unknown',
         address:
           normalize(taskData.taskType) === 'autocomplete' && line === '1.'
-            ? topAutocompleteAddress
-            : '',
-        category: '',
+            ? topAutocompleteAddress || subtitleAddress
+            : subtitleAddress,
+        category: subtitleCategory,
         type: '',
         status: '',
         distanceToUser: '',
@@ -147,26 +169,10 @@ export const parseRawTaskText = (text) => {
         pinLatLng: '',
       };
 
-      const possibleSubtitle = lines[i + 2];
-
-      if (
-        possibleSubtitle &&
-        possibleSubtitle.includes('•') &&
-        !currentResult.address
-      ) {
-        const parts = possibleSubtitle.split('•').map((part) => part.trim());
-        currentResult.address = parts.slice(1).join(', ');
-      }
-
       continue;
     }
 
     if (!currentResult) continue;
-
-    if (line.includes('•') && !currentResult.address) {
-      const parts = line.split('•').map((part) => part.trim());
-      currentResult.address = parts.slice(1).join(', ');
-    }
 
     const inlineAddress = getInlineValue(line, 'Address');
 
