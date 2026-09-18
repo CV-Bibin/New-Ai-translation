@@ -1,18 +1,41 @@
-export default async function handler(req, res) {
+export const config = {
+  runtime: 'edge',
+};
+
+export default async function handler(req) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: 'Gemini API key is missing' });
+    return new Response(JSON.stringify({ error: 'Gemini API key is missing' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
-  const { textArray, sourceLangCode, protectedTerms = [] } = req.body;
+  let body;
+  try {
+    body = await req.json();
+  } catch (err) {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const { textArray, sourceLangCode, protectedTerms = [] } = body;
 
   if (!Array.isArray(textArray)) {
-    return res.status(400).json({ error: 'textArray must be an array' });
+    return new Response(JSON.stringify({ error: 'textArray must be an array' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   const fieldTypeForIndex = (index) => {
@@ -218,7 +241,10 @@ ${JSON.stringify(inputItems)}
     const data = await geminiRes.json();
 
     if (!geminiRes.ok) {
-      return res.status(geminiRes.status).json(data);
+      return new Response(JSON.stringify(data), {
+        status: geminiRes.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     let resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
@@ -229,9 +255,10 @@ ${JSON.stringify(inputItems)}
     try {
       parsed = JSON.parse(resultText);
     } catch {
-      return res.status(502).json({
-        error: 'Gemini returned invalid JSON',
-      });
+      return new Response(
+        JSON.stringify({ error: 'Gemini returned invalid JSON' }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
     let localizedTexts = Array.isArray(parsed.localizedTexts)
@@ -272,12 +299,13 @@ ${JSON.stringify(inputItems)}
 
     const fieldLanguages = Array.isArray(parsed.fieldLanguages)
       ? parsed.fieldLanguages
-          .filter((item) => (
-            Number.isInteger(item.inputIndex) &&
-            item.inputIndex >= 0 &&
-            item.inputIndex < textArray.length &&
-            allowedFieldTypes.has(item.fieldType)
-          ))
+          .filter(
+            (item) =>
+              Number.isInteger(item.inputIndex) &&
+              item.inputIndex >= 0 &&
+              item.inputIndex < textArray.length &&
+              allowedFieldTypes.has(item.fieldType)
+          )
           .map((item) => ({
             inputIndex: item.inputIndex,
             fieldType: item.fieldType,
@@ -292,12 +320,13 @@ ${JSON.stringify(inputItems)}
 
     const spellingIssues = Array.isArray(parsed.spellingIssues)
       ? parsed.spellingIssues
-          .filter((issue) => (
-            Number.isInteger(issue.inputIndex) &&
-            issue.inputIndex >= 0 &&
-            issue.inputIndex < textArray.length &&
-            allowedFieldTypes.has(issue.fieldType)
-          ))
+          .filter(
+            (issue) =>
+              Number.isInteger(issue.inputIndex) &&
+              issue.inputIndex >= 0 &&
+              issue.inputIndex < textArray.length &&
+              allowedFieldTypes.has(issue.fieldType)
+          )
           .map((issue) => ({
             inputIndex: issue.inputIndex,
             fieldType: issue.fieldType,
@@ -315,12 +344,13 @@ ${JSON.stringify(inputItems)}
 
     const fieldNotes = Array.isArray(parsed.fieldNotes)
       ? parsed.fieldNotes
-          .filter((note) => (
-            Number.isInteger(note.inputIndex) &&
-            note.inputIndex >= 0 &&
-            note.inputIndex < textArray.length &&
-            allowedFieldTypes.has(note.fieldType)
-          ))
+          .filter(
+            (note) =>
+              Number.isInteger(note.inputIndex) &&
+              note.inputIndex >= 0 &&
+              note.inputIndex < textArray.length &&
+              allowedFieldTypes.has(note.fieldType)
+          )
           .map((note) => ({
             inputIndex: note.inputIndex,
             fieldType: note.fieldType,
@@ -334,18 +364,24 @@ ${JSON.stringify(inputItems)}
           }))
       : [];
 
-    return res.status(200).json({
-      localizedTexts,
-      transliteratedTexts,
-      spellingIssues,
-      fieldNotes,
-      fieldLanguages,
-      detectedSourceLanguage,
-    });
+    return new Response(
+      JSON.stringify({
+        localizedTexts,
+        transliteratedTexts,
+        spellingIssues,
+        fieldNotes,
+        fieldLanguages,
+        detectedSourceLanguage,
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    );
   } catch (err) {
-    return res.status(500).json({
-      error: 'AI localization failed',
-      details: err.message,
-    });
+    return new Response(
+      JSON.stringify({
+        error: 'AI localization failed',
+        details: err.message,
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 }
