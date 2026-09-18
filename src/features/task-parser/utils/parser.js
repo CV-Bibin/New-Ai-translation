@@ -85,10 +85,17 @@ export const parseRawTaskText = (text) => {
     }
   }
 
-  const getNextResultValue = (index) => {
+  // UPDATED: Now accepts expectedLabel to prevent collision bugs
+  const getNextResultValue = (index, expectedLabel = '') => {
     const nextLine = lines[index + 1];
+    if (!nextLine) return '';
+
+    // Fix: If we are looking for the 'Type' field, 'ADDRESS' is a valid value, not a label
+    if (normalize(expectedLabel) === 'type' && normalize(nextLine) === 'address') {
+      return nextLine;
+    }
+
     if (
-      nextLine &&
       !isResultLabel(nextLine) &&
       !isResultNumber(nextLine) &&
       nextLine !== 'Result name/title is in unexpected language or script'
@@ -122,7 +129,6 @@ export const parseRawTaskText = (text) => {
       let subtitleLines = [];
       let subtitleIndex = i + 2;
       
-      // Removed 'आस-पास में खोजें' and 'search nearby' so they display in the parsed table
       const ignoredArtifacts = [
         'directions', 'website', 'save', 'share'
       ];
@@ -192,9 +198,9 @@ export const parseRawTaskText = (text) => {
       }
     }
 
-    // Standard Field Processing
+    // Standard Field Processing (Now passes the label type)
     if (normalize(line) === 'category') {
-      const val = getNextResultValue(i);
+      const val = getNextResultValue(i, 'category');
       if (val) {
         currentResult.category = val;
         i++; // Skip the extracted value line
@@ -202,7 +208,7 @@ export const parseRawTaskText = (text) => {
     }
 
     if (normalize(line) === 'type') {
-      const val = getNextResultValue(i);
+      const val = getNextResultValue(i, 'type');
       if (val) {
         currentResult.type = val;
         i++;
@@ -210,7 +216,7 @@ export const parseRawTaskText = (text) => {
     }
 
     if (normalize(line) === 'status') {
-      const val = getNextResultValue(i);
+      const val = getNextResultValue(i, 'status');
       if (val) {
         currentResult.status = val;
         i++;
@@ -218,7 +224,7 @@ export const parseRawTaskText = (text) => {
     }
 
     if (normalize(line) === 'distance to user') {
-      const val = getNextResultValue(i);
+      const val = getNextResultValue(i, 'distance to user');
       if (val) {
         currentResult.distanceToUser = val;
         i++;
@@ -226,7 +232,7 @@ export const parseRawTaskText = (text) => {
     }
 
     if (normalize(line) === 'distance to viewport') {
-      const val = getNextResultValue(i);
+      const val = getNextResultValue(i, 'distance to viewport');
       if (val) {
         currentResult.distanceToViewport = val;
         i++;
@@ -234,7 +240,7 @@ export const parseRawTaskText = (text) => {
     }
 
     if (normalize(line) === 'lat, lng') {
-      const val = getNextResultValue(i);
+      const val = getNextResultValue(i, 'lat, lng');
       if (val) {
         currentResult.pinLatLng = val;
         i++;
@@ -246,7 +252,6 @@ export const parseRawTaskText = (text) => {
   if (currentResult) taskData.results.push(currentResult);
 
   // 5. FINAL SWEEP: Apply Autocomplete Fallback SAFELY
-  // Only apply if: Autocomplete AND India AND top address exists AND Result 1 is NOT a 'QUERY'
   if (
     normalize(taskData.taskType) === 'autocomplete' &&
     normalize(taskData.country) === 'india' &&
