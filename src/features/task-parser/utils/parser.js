@@ -85,12 +85,10 @@ export const parseRawTaskText = (text) => {
     }
   }
 
-  // UPDATED: Now accepts expectedLabel to prevent collision bugs
   const getNextResultValue = (index, expectedLabel = '') => {
     const nextLine = lines[index + 1];
     if (!nextLine) return '';
 
-    // Fix: If we are looking for the 'Type' field, 'ADDRESS' is a valid value, not a label
     if (normalize(expectedLabel) === 'type' && normalize(nextLine) === 'address') {
       return nextLine;
     }
@@ -133,7 +131,6 @@ export const parseRawTaskText = (text) => {
         'directions', 'website', 'save', 'share'
       ];
 
-      // Extract floating text between Title and the first Field Label
       while (
         subtitleIndex < lines.length &&
         !isResultLabel(lines[subtitleIndex]) &&
@@ -146,7 +143,6 @@ export const parseRawTaskText = (text) => {
         subtitleIndex++;
       }
 
-      // Process floating subtitle text
       if (subtitleLines.length > 0) {
         const subtitleText = subtitleLines.join(', ');
         
@@ -159,16 +155,14 @@ export const parseRawTaskText = (text) => {
         }
       }
 
-      // Advance loop index past the processed subtitle lines
       i = subtitleIndex - 1; 
       continue;
     }
 
     if (!currentResult) continue;
 
+    // Address Processing
     const inlineAddress = getInlineValue(line, 'Address');
-
-    // Standard Address Processing
     if (normalize(line) === 'address' || inlineAddress) {
       if (inlineAddress) {
         currentResult.address = inlineAddress;
@@ -192,63 +186,95 @@ export const parseRawTaskText = (text) => {
         } else if (newAddress) {
            currentResult.address = newAddress;
         }
-        
-        // Advance main loop index past the processed address lines
         i = j - 1; 
       }
     }
 
-    // Standard Field Processing (Now passes the label type)
-    if (normalize(line) === 'category') {
-      const val = getNextResultValue(i, 'category');
-      if (val) {
-        currentResult.category = val;
-        i++; // Skip the extracted value line
+    // Category Processing
+    const inlineCategory = getInlineValue(line, 'Category');
+    if (normalize(line) === 'category' || inlineCategory) {
+      if (inlineCategory) {
+        currentResult.category = inlineCategory === '-' ? '' : inlineCategory;
+      } else {
+        const val = getNextResultValue(i, 'category');
+        if (val) {
+          currentResult.category = val === '-' ? '' : val;
+          i++; 
+        }
       }
     }
 
-    if (normalize(line) === 'type') {
-      const val = getNextResultValue(i, 'type');
-      if (val) {
-        currentResult.type = val;
-        i++;
+    // Type Processing
+    const inlineType = getInlineValue(line, 'Type');
+    if (normalize(line) === 'type' || inlineType) {
+      if (inlineType) {
+        currentResult.type = inlineType;
+      } else {
+        const val = getNextResultValue(i, 'type');
+        if (val) {
+          currentResult.type = val;
+          i++;
+        }
       }
     }
 
-    if (normalize(line) === 'status') {
-      const val = getNextResultValue(i, 'status');
-      if (val) {
-        currentResult.status = val;
-        i++;
+    // Status Processing
+    const inlineStatus = getInlineValue(line, 'Status');
+    if (normalize(line) === 'status' || inlineStatus) {
+      if (inlineStatus) {
+        currentResult.status = inlineStatus;
+      } else {
+        const val = getNextResultValue(i, 'status');
+        if (val) {
+          currentResult.status = val;
+          i++;
+        }
       }
     }
 
-    if (normalize(line) === 'distance to user') {
-      const val = getNextResultValue(i, 'distance to user');
-      if (val) {
-        currentResult.distanceToUser = val;
-        i++;
+    // Distance to User Processing
+    const inlineDistUser = getInlineValue(line, 'Distance to User');
+    if (normalize(line) === 'distance to user' || inlineDistUser) {
+      if (inlineDistUser) {
+        currentResult.distanceToUser = inlineDistUser;
+      } else {
+        const val = getNextResultValue(i, 'distance to user');
+        if (val) {
+          currentResult.distanceToUser = val;
+          i++;
+        }
       }
     }
 
-    if (normalize(line) === 'distance to viewport') {
-      const val = getNextResultValue(i, 'distance to viewport');
-      if (val) {
-        currentResult.distanceToViewport = val;
-        i++;
+    // Distance to Viewport Processing
+    const inlineDistView = getInlineValue(line, 'Distance to Viewport');
+    if (normalize(line) === 'distance to viewport' || inlineDistView) {
+      if (inlineDistView) {
+        currentResult.distanceToViewport = inlineDistView;
+      } else {
+        const val = getNextResultValue(i, 'distance to viewport');
+        if (val) {
+          currentResult.distanceToViewport = val;
+          i++;
+        }
       }
     }
 
-    if (normalize(line) === 'lat, lng') {
-      const val = getNextResultValue(i, 'lat, lng');
-      if (val) {
-        currentResult.pinLatLng = val;
-        i++;
+    // Coordinates Processing
+    const inlineLatLng = getInlineValue(line, 'Lat, Lng');
+    if (normalize(line) === 'lat, lng' || inlineLatLng) {
+      if (inlineLatLng) {
+        currentResult.pinLatLng = inlineLatLng;
+      } else {
+        const val = getNextResultValue(i, 'lat, lng');
+        if (val) {
+          currentResult.pinLatLng = val;
+          i++;
+        }
       }
     }
   }
 
-  // Push the final result to the array
   if (currentResult) taskData.results.push(currentResult);
 
   // 5. FINAL SWEEP: Apply Autocomplete Fallback SAFELY
