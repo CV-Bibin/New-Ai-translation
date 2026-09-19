@@ -29,7 +29,8 @@ export default async function handler(req) {
     });
   }
 
-  const { textArray, sourceLangCode, protectedTerms = [] } = body;
+  // ADDED: startIndex to allow batching from the frontend
+  const { textArray, sourceLangCode, protectedTerms = [], startIndex = 0 } = body;
 
   if (!Array.isArray(textArray)) {
     return new Response(JSON.stringify({ error: 'textArray must be an array' }), {
@@ -52,11 +53,15 @@ export default async function handler(req) {
     return 'unknown';
   };
 
-  const inputItems = textArray.map((text, index) => ({
-    index,
-    fieldType: fieldTypeForIndex(index),
-    text: String(text || ''),
-  }));
+  // UPDATED: Use startIndex to calculate the exact absolute position of the text
+  const inputItems = textArray.map((text, localIndex) => {
+    const absoluteIndex = startIndex + localIndex;
+    return {
+      index: absoluteIndex,
+      fieldType: fieldTypeForIndex(absoluteIndex),
+      text: String(text || ''),
+    };
+  });
 
   const prompt = `
 You are an expert Indian map task localization assistant for TryRating tasks.
@@ -297,17 +302,18 @@ ${JSON.stringify(inputItems)}
       ? detectedSourceLanguageRaw
       : 'UNKNOWN';
 
+    // UPDATED: Shift output indexes back by startIndex so they align with the frontend
     const fieldLanguages = Array.isArray(parsed.fieldLanguages)
       ? parsed.fieldLanguages
           .filter(
             (item) =>
               Number.isInteger(item.inputIndex) &&
-              item.inputIndex >= 0 &&
-              item.inputIndex < textArray.length &&
+              item.inputIndex >= startIndex &&
+              item.inputIndex < startIndex + textArray.length &&
               allowedFieldTypes.has(item.fieldType)
           )
           .map((item) => ({
-            inputIndex: item.inputIndex,
+            inputIndex: item.inputIndex - startIndex, // Align with local array
             fieldType: item.fieldType,
             languages: Array.isArray(item.languages)
               ? item.languages.map((lang) => String(lang))
@@ -323,12 +329,12 @@ ${JSON.stringify(inputItems)}
           .filter(
             (issue) =>
               Number.isInteger(issue.inputIndex) &&
-              issue.inputIndex >= 0 &&
-              issue.inputIndex < textArray.length &&
+              issue.inputIndex >= startIndex &&
+              issue.inputIndex < startIndex + textArray.length &&
               allowedFieldTypes.has(issue.fieldType)
           )
           .map((issue) => ({
-            inputIndex: issue.inputIndex,
+            inputIndex: issue.inputIndex - startIndex, // Align with local array
             fieldType: issue.fieldType,
             originalWord: String(issue.originalWord || ''),
             actualTransliteration: String(issue.actualTransliteration || ''),
@@ -347,12 +353,12 @@ ${JSON.stringify(inputItems)}
           .filter(
             (note) =>
               Number.isInteger(note.inputIndex) &&
-              note.inputIndex >= 0 &&
-              note.inputIndex < textArray.length &&
+              note.inputIndex >= startIndex &&
+              note.inputIndex < startIndex + textArray.length &&
               allowedFieldTypes.has(note.fieldType)
           )
           .map((note) => ({
-            inputIndex: note.inputIndex,
+            inputIndex: note.inputIndex - startIndex, // Align with local array
             fieldType: note.fieldType,
             mode: String(note.mode || ''),
             preservedTerms: Array.isArray(note.preservedTerms)
