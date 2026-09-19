@@ -3,7 +3,6 @@ import { parseRawTaskText } from '../features/task-parser/utils/parser';
 import ResultCard from '../features/task-parser/components/ResultCard';
 import MapComponent from '../features/map-view/MapComponent';
 import { translateTaskFields } from '../features/translator/services/deeplService';
-import { smartLocalizeTaskFields } from '../features/localizer/services/geminiLocalizeService';
 
 import { db } from '../services/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -46,12 +45,69 @@ const LANGUAGE_NAMES = {
 
 const getLanguageLabel = (code) => {
   if (!code) return '';
-
   const normalizedCode = String(code).toUpperCase();
   const languageName = LANGUAGE_NAMES[normalizedCode];
-
   return languageName ? `${languageName} (${normalizedCode})` : normalizedCode;
 };
+
+// ============================================================================
+// NEW BATCHING FUNCTION TO PREVENT 504 TIMEOUTS
+// ============================================================================
+const fetchLocalizationInBatches = async (textArray, sourceLangCode, protectedTerms = []) => {
+  const BATCH_SIZE = 10;
+  
+  let finalResult = {
+    localizedTexts: [],
+    transliteratedTexts: [],
+    fieldLanguages: [],
+    spellingIssues: [],
+    fieldNotes: [],
+    detectedSourceLanguage: 'UNKNOWN',
+  };
+
+  for (let i = 0; i < textArray.length; i += BATCH_SIZE) {
+    const batch = textArray.slice(i, i + BATCH_SIZE);
+    
+    const response = await fetch('/api/gemini-localize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        textArray: batch,
+        sourceLangCode,
+        protectedTerms,
+        startIndex: i, // Tells the backend exactly where this batch starts
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.text();
+      throw new Error(`Batch failed (${response.status}): ${errorData}`);
+    }
+
+    const data = await response.json();
+
+    finalResult.localizedTexts.push(...(data.localizedTexts || []));
+    finalResult.transliteratedTexts.push(...(data.transliteratedTexts || []));
+    
+    // Adjust inputIndexes back to the absolute array size for the UI
+    if (data.fieldLanguages) {
+      finalResult.fieldLanguages.push(...data.fieldLanguages.map(f => ({ ...f, inputIndex: f.inputIndex + i })));
+    }
+    if (data.spellingIssues) {
+      finalResult.spellingIssues.push(...data.spellingIssues.map(s => ({ ...s, inputIndex: s.inputIndex + i })));
+    }
+    if (data.fieldNotes) {
+      finalResult.fieldNotes.push(...data.fieldNotes.map(n => ({ ...n, inputIndex: n.inputIndex + i })));
+    }
+    
+    if (data.detectedSourceLanguage && data.detectedSourceLanguage !== 'UNKNOWN') {
+      finalResult.detectedSourceLanguage = data.detectedSourceLanguage;
+    }
+  }
+
+  return finalResult;
+};
+// ============================================================================
 
 const Dashboard = () => {
   const [rawData, setRawData] = useState('');
@@ -255,6 +311,7 @@ const Dashboard = () => {
         textsToLocalize.push(res.status || '');
       });
 
+      // USING THE NEW BATCH FUNCTION
       const {
         localizedTexts,
         transliteratedTexts: aiTransliteratedTexts,
@@ -262,7 +319,7 @@ const Dashboard = () => {
         fieldNotes: aiFieldNotes,
         fieldLanguages: aiFieldLanguages,
         detectedSourceLanguage,
-      } = await smartLocalizeTaskFields(textsToLocalize, 'AUTO');
+      } = await fetchLocalizationInBatches(textsToLocalize, 'AUTO');
 
       let ptr = 0;
 
@@ -416,18 +473,19 @@ const Dashboard = () => {
   };
 
   return (
-    <div style={{ fontFamily: 'Segoe UI, sans-serif', backgroundColor: APP_THEME.pageBg, minHeight: '100vh', margin: 0, padding: 0, color: APP_THEME.textMain }}>      {showDbModal && (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-        <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', maxWidth: '400px', textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
-          <h3 style={{ marginTop: 0 }}>Task Found in Database</h3>
-          <p style={{ color: '#555', marginBottom: '25px' }}>This Request ID has already been processed previously. Would you like to load the saved data?</p>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-            <button onClick={handleRejectDb} style={{ padding: '10px 15px', border: '1px solid #ccc', backgroundColor: '#f8f9fa', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Ignore & Use New Paste</button>
-            <button onClick={handleAcceptDb} style={{ padding: '10px 15px', border: 'none', backgroundColor: '#0d6efd', color: 'white', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Load from Database</button>
+    <div style={{ fontFamily: 'Segoe UI, sans-serif', backgroundColor: APP_THEME.pageBg, minHeight: '100vh', margin: 0, padding: 0, color: APP_THEME.textMain }}>
+      {showDbModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '8px', maxWidth: '400px', textAlign: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ marginTop: 0 }}>Task Found in Database</h3>
+            <p style={{ color: '#555', marginBottom: '25px' }}>This Request ID has already been processed previously. Would you like to load the saved data?</p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button onClick={handleRejectDb} style={{ padding: '10px 15px', border: '1px solid #ccc', backgroundColor: '#f8f9fa', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Ignore & Use New Paste</button>
+              <button onClick={handleAcceptDb} style={{ padding: '10px 15px', border: 'none', backgroundColor: '#0d6efd', color: 'white', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Load from Database</button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
       <div style={{
         backgroundColor: APP_THEME.topBar,
@@ -503,7 +561,8 @@ const Dashboard = () => {
           borderRadius: '10px',
           border: `1px solid ${APP_THEME.panelBorder}`,
           boxShadow: '0 14px 35px rgba(15, 23, 42, 0.10)',
-        }}>         <div style={{ marginBottom: '18px' }}>
+        }}>
+          <div style={{ marginBottom: '18px' }}>
             <h2 style={{ margin: 0, fontSize: '26px', color: APP_THEME.textMain }}>
               Paste Task Data
             </h2>
@@ -529,24 +588,24 @@ const Dashboard = () => {
               backgroundColor: '#fbfdff',
             }} />
 
-         <button
-  onClick={handleProcessTask}
-  disabled={isCheckingDB}
-  style={{
-    width: '100%',
-    padding: '13px',
-    marginTop: '18px',
-    backgroundColor: APP_THEME.primary,
-    color: 'white',
-    cursor: isCheckingDB ? 'not-allowed' : 'pointer',
-    fontWeight: '800',
-    border: 'none',
-    borderRadius: '8px',
-    boxShadow: '0 6px 14px rgba(23, 74, 124, 0.22)',
-  }}
->
-  {isCheckingDB ? 'Checking Database...' : 'Extract & Build Layout'}
-</button>
+          <button
+            onClick={handleProcessTask}
+            disabled={isCheckingDB}
+            style={{
+              width: '100%',
+              padding: '13px',
+              marginTop: '18px',
+              backgroundColor: APP_THEME.primary,
+              color: 'white',
+              cursor: isCheckingDB ? 'not-allowed' : 'pointer',
+              fontWeight: '800',
+              border: 'none',
+              borderRadius: '8px',
+              boxShadow: '0 6px 14px rgba(23, 74, 124, 0.22)',
+            }}
+          >
+            {isCheckingDB ? 'Checking Database...' : 'Extract & Build Layout'}
+          </button>
 
           {transError && <p style={{ color: '#dc3545', fontWeight: 'bold' }}>{transError}</p>}
         </div>
@@ -573,7 +632,8 @@ const Dashboard = () => {
               boxShadow: '0 8px 20px rgba(15, 23, 42, 0.06)',
               gap: '10px',
               flexWrap: 'wrap',
-            }}>              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                 {isCached && <span style={{ fontSize: '13px', color: '#198754', fontWeight: 'bold', marginRight: '5px', backgroundColor: '#d1e7dd', padding: '4px 8px', borderRadius: '4px' }}>DB Archive</span>}
 
                 <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ccc', fontWeight: 'bold' }}>
